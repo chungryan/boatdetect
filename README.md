@@ -1,6 +1,6 @@
 # Boat Detection using GDAL and Sentinel-1 SAR Data
 
-![Sentinel-1 Sample Data](data/2017-01-22-00_00_2017-01-22-23_59_Sentinel-1_IW_VV_VV_(Raw).tiff)
+![Sentinel-1 Sample Data](sample.jpg)
 
 ## Purpose
 
@@ -52,18 +52,8 @@ The compiled binary will be named `boatdetect` in the current directory.
 
 ## How to Use
 
-### Basic Usage
-
 ```bash
 ./boatdetect --input ./data --out ./detections.geojson
-```
-
-### Sample Command
-
-```bash
-./boatdetect \
-  --input ./data \
-  --out ./detections.geojson
 ```
 
 ### Expected Output
