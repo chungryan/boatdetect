@@ -6,15 +6,11 @@ Sentinel-1 sample data of Singapore, courtesy of [Copernicus](https://browser.da
 
 ## Purpose
 
-This project is a simple PoC to explore and experiment with the GDAL (Geospatial Data Abstraction Library) tool for processing satellite imagery. The initial idea was to build a comprehensive tool to detect drifting boats using Sentinel-1 SAR (Synthetic Aperture Radar) data. However, due to limited availability of high-temporal-resolution data from Copernicus, the scope was scaled down to focus on **boat detection** rather than drift tracking.
+This project is a small PoC that uses GDAL to detect boats in Sentinel-1 SAR imagery.
 
-## Project Background
+## Scope
 
-The original concept aimed to:
-- Detect boats in maritime areas using Sentinel-1 SAR imagery
-- Track vessel movement over time to identify drifting boats
-
-**Limitation encountered**: Copernicus Sentinel-1 data does not have sufficient temporal resolution (revisit frequency) in most areas to reliably track and detect drifting vessels. Therefore, this project focuses on the simpler problem of **detecting boats** in individual SAR scenes.
+The original idea included drift tracking, but Copernicus Sentinel-1 revisit frequency is not high enough in most areas for reliable tracking. This README and codebase focus on **single-scene boat detection**.
 
 ## Sample Data
 
@@ -60,6 +56,23 @@ Before running this tool, ensure you have:
 
 **No local GDAL installation required** – the tool uses a Docker container with GDAL pre-installed.
 
+## Docker Requirements Check
+
+Before running, verify Docker is available:
+
+```bash
+# Check Docker is running
+docker ps
+
+# Pull GDAL image manually (optional - tool does this automatically)
+docker pull ghcr.io/osgeo/gdal:latest
+```
+
+On first run, the tool will automatically:
+1. Verify Docker is available
+2. Check if the GDAL image is present
+3. Pull the image if needed (~500MB, one-time download)
+
 ## How to Compile
 
 ```bash
@@ -83,7 +96,17 @@ The compiled binary will be named `boatdetect` in the current directory.
 
 ### Expected Output
 
-The tool produces a GeoJSON file containing detected boat candidates. Each detection includes:
+After running the command, the tool prints a per-scene summary table in the CLI and writes detections to a GeoJSON file.
+
+Example CLI output:
+```bash
+ryanchung@Ryans-MBP boatdetect % ./boatdetect --input ./data --out detections.geojson
+scene_id                                                     candidates  score_mean  score_max  area_min  area_max
+2017-01-22-00_00_2017-01-22-23_59_Sentinel-1_IW_VV_VV_(Raw)  103         0.00        0.00       15        4530216
+2017-02-15-00_00_2017-02-15-23_59_Sentinel-1_IW_VV_VV_(Raw)  97          0.00        0.00       15        4546495
+```
+
+The GeoJSON output contains detected boat candidates. Each detection includes:
 - **Longitude and Latitude**: Geographic coordinates of the detected object
 - **Score**: Detection confidence score (based on pixel intensity)
 - **Area (pixels)**: Size of the detected object in pixels
@@ -110,8 +133,6 @@ Example output (detections.geojson):
   ]
 }
 ```
-
-The tool also prints a summary table to the console showing the number of detections per scene.
 
 ## What the Tool Does
 
@@ -154,9 +175,7 @@ The boat detection pipeline consists of several steps, leveraging GDAL for geosp
 
 ### 4. **Statistical Analysis**
    - Parses the ASCII grid into memory
-   - Computes statistical thresholds using one of two methods:
-     - **Percentile-based**: Identifies pixels above the 99.5th percentile (configurable)
-     - **Standard deviation-based**: Identifies pixels beyond μ - k×σ (for dark targets on bright background)
+  - Computes detection thresholds (see **Algorithm Details** for threshold behavior and parameters)
 
 ### 5. **Connected Component Analysis**
    - Applies thresholding to create a binary mask (boat vs. background)
@@ -173,43 +192,10 @@ The boat detection pipeline consists of several steps, leveraging GDAL for geosp
 ### 7. **Output Generation**
    - Limits the number of candidates to the top 200 (configurable) by area
    - Groups candidates by source scene
-   - Writes results to a GeoJSON file for visualization in GIS tools
+  - Writes the CLI summary table and GeoJSON output
 
 ### 8. **Cleanup**
    - Removes temporary preprocessing files
-
-## Docker Integration
-
-This tool uses **Docker** to run GDAL commands, eliminating the need for local GDAL installation and ensuring reproducibility across different systems.
-
-### How Docker is Used
-
-1. **Docker Image**: The tool automatically pulls `ghcr.io/osgeo/gdal:latest` from GitHub Container Registry
-2. **Volume Mounting**: The current working directory is mounted as `/work` inside the container
-3. **Command Execution**: GDAL commands (gdalwarp, gdal_translate, gdalinfo) run inside ephemeral containers
-4. **Automatic Cleanup**: Containers are removed after each command completes
-
-### Architecture
-
-```
-User runs: ./boatdetect --input data --out detections.geojson
-     ↓
-Main program initializes Docker client
-     ↓
-For each TIFF file:
-  ├─ Run gdalwarp in Docker container
-  ├─ Run gdal_translate in Docker container
-  ├─ Run gdal_translate (AAIGrid) in Docker container
-  └─ Process detections locally
-     ↓
-Output GeoJSON file
-```
-
-### Benefits
-
-- **No local GDAL installation**: Works on any system with Docker
-- **Consistent environment**: Same GDAL version across all platforms
-- **Isolation**: No conflicts with other software
 
 ## Algorithm Details
 
@@ -232,6 +218,54 @@ The detection algorithm is designed for **dark targets on bright backgrounds**, 
 - **Inverted mode** (default): Detects pixels with values below `mean - k×std` or below the (100 - percentile)th percentile
 - **Normal mode**: Detects pixels above `mean + k×std` or above the percentile
 
+## Docker Integration
+
+The tool runs GDAL inside ephemeral Docker containers. The first run ensures `ghcr.io/osgeo/gdal:latest` is available, mounts the working directory to `/work`, executes GDAL commands, then cleans up containers.
+
+### Architecture
+
+```
+User runs: ./boatdetect --input data --out detections.geojson
+     ↓
+Main program initializes Docker client
+     ↓
+For each TIFF file:
+  ├─ Run gdalwarp in Docker container
+  ├─ Run gdal_translate in Docker container
+  ├─ Run gdal_translate (AAIGrid) in Docker container
+  └─ Process detections locally
+     ↓
+Output GeoJSON file
+```
+
+## Project Structure
+
+```
+boatdetect/
+├── boatdetect              # Compiled binary
+├── cmd/
+│   └── boatdetect/         # Main application entry point
+│       ├── main.go         # Program initialization
+│       └── detect.go       # Detection command logic
+├── internal/
+│   ├── detect/             # Detection algorithm
+│   │   ├── pipeline.go     # Main detection pipeline
+│   │   ├── components.go   # Connected component analysis
+│   │   ├── geo.go          # Coordinate transformations
+│   │   └── stats.go        # Statistical computations
+│   ├── gdal/               # GDAL wrapper
+│   │   ├── docker.go       # Docker-based GDAL execution
+│   │   ├── preprocess.go   # Image preprocessing
+│   │   ├── info.go         # Raster metadata extraction
+│   │   └── aai.go          # AAIGrid parser
+│   ├── docker/             # Docker client
+│   │   └── client.go       # Docker container management
+│   └── geojson/            # GeoJSON output
+│       └── boats.go        # Feature collection builder
+├── data/                   # Sample Sentinel-1 data
+└── detections.geojson      # Example output
+```
+
 ## Testing
 
 The project includes comprehensive unit tests for all major components:
@@ -247,23 +281,6 @@ go test -cover ./...
 go test ./internal/detect
 go test ./internal/gdal
 ```
-
-## Docker Requirements Check
-
-Before running, verify Docker is available:
-
-```bash
-# Check Docker is running
-docker ps
-
-# Pull GDAL image manually (optional - tool does this automatically)
-docker pull ghcr.io/osgeo/gdal:latest
-```
-
-On first run, the tool will automatically:
-1. Verify Docker is available
-2. Check if the GDAL image is present
-3. Pull the image if needed (~500MB, one-time download)
 
 ## Troubleshooting
 
@@ -296,37 +313,9 @@ sudo usermod -aG docker $USER
 # Log out and back in for changes to take effect
 ```
 
-## Project Structure
-
-```
-boatdetect/
-├── boatdetect              # Compiled binary
-├── cmd/
-│   └── boatdetect/         # Main application entry point
-│       ├── main.go         # Program initialization
-│       └── detect.go       # Detection command logic
-├── internal/
-│   ├── detect/             # Detection algorithm
-│   │   ├── pipeline.go     # Main detection pipeline
-│   │   ├── components.go   # Connected component analysis
-│   │   ├── geo.go          # Coordinate transformations
-│   │   └── stats.go        # Statistical computations
-│   ├── gdal/               # GDAL wrapper
-│   │   ├── docker.go       # Docker-based GDAL execution
-│   │   ├── preprocess.go   # Image preprocessing
-│   │   ├── info.go         # Raster metadata extraction
-│   │   └── aai.go          # AAIGrid parser
-│   ├── docker/             # Docker client
-│   │   └── client.go       # Docker container management
-│   └── geojson/            # GeoJSON output
-│       └── boats.go        # Feature collection builder
-├── data/                   # Sample Sentinel-1 data
-└── detections.geojson      # Example output
-```
-
 ## Limitations
 
-- **No drift tracking**: Due to insufficient temporal resolution in Copernicus data
+- **No drift tracking in this version**
 - **Single-scene analysis**: Each scene is processed independently
 - **False positives**: The algorithm may detect non-vessel objects (e.g., buoys, platforms, noise)
 - **Parameter tuning**: Detection thresholds may need adjustment for different geographic areas or sea conditions
