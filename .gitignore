@@ -1,0 +1,13 @@
+# Temporary files
+.tmp/
+preprocess/
+.driftwatch-temp/
+
+# Build artifacts
+/boatdetect
+
+# Generated files
+detections.geojson
+
+# macOS
+.DS_Store
