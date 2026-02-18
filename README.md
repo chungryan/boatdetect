@@ -1,5 +1,7 @@
 # Boat Detection using GDAL and Sentinel-1 SAR Data
 
+Sentinel-1 sample data of Singapore, courtesy of [Copernicus](https://browser.dataspace.copernicus.eu/):
+
 ![Sentinel-1 Sample Data](sample.jpg)
 
 ## Purpose
@@ -22,6 +24,29 @@ The `data/` folder contains sample GeoTIFF files covering the maritime area betw
 - `2017-02-15-00_00_2017-02-15-23_59_Sentinel-1_IW_VV_VV_(Raw).tiff`
 
 These are Sentinel-1 IW (Interferometric Wide Swath) mode images in VV polarization, capturing backscatter intensity data that reveals vessels on the water surface.
+
+### How the sample data was obtained (Copernicus Browser)
+
+The sample scenes were downloaded from [Copernicus Browser](https://browser.dataspace.copernicus.eu/) using the following search filters:
+
+- **Mission**: Sentinel-1
+- **Product Type**: GRD
+- **Mode**: IW
+- **Polarisation**: VV
+
+Typical download flow:
+1. Open Copernicus Browser and zoom to the area of interest (Singapore–Indonesia waters in this PoC).
+2. Set the date range for the acquisition window you want.
+3. In dataset filters, select `Sentinel-1` mission, then `GRD`, `IW`, and `VV`.
+4. Choose scenes with good sea coverage and minimal land clutter for the target area.
+5. Download the product (GeoTIFF/measurement raster as provided by the platform workflow) and place it in `data/`.
+
+### Why these criteria matter
+
+- **Sentinel-1**: SAR is all-weather, day/night capable, so vessel signatures are available even with cloud cover where optical imagery fails.
+- **GRD (Ground Range Detected)**: Provides detected intensity imagery that is straightforward for thresholding and connected-component detection (the core approach in this project).
+- **IW (Interferometric Wide Swath)**: Offers broad coastal/offshore coverage at suitable spatial resolution, making it practical for scanning maritime scenes for vessel candidates.
+- **VV polarisation**: Produces consistent sea-surface backscatter behavior for this pipeline and is commonly available, helping stable threshold-based detection tuning.
 
 ## Requirements
 
