@@ -23,13 +23,19 @@ func ToAAIGrid(ctx context.Context, inputTif, outputAsc string) error {
 func removeIfExists(path string) error {
 	_, err := os.Stat(path)
 	if err == nil {
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("remove output: %w", err)
-		}
-		return nil
+		return removeFile(path)
 	}
 	if os.IsNotExist(err) {
 		return nil
 	}
 	return fmt.Errorf("stat output: %w", err)
+}
+
+func removeFile(path string) error {
+	err := os.Remove(path)
+	if err != nil {
+		return fmt.Errorf("remove output: %w", err)
+	}
+
+	return nil
 }

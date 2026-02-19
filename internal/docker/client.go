@@ -56,17 +56,7 @@ func (c *Client) Run(ctx context.Context, name string, args ...string) (stdout s
 	// Convert absolute paths to container paths, but skip flags and non-path arguments
 	convertedArgs := make([]string, len(args))
 	for i, arg := range args {
-		// Skip if it's a flag
-		if strings.HasPrefix(arg, "-") {
-			convertedArgs[i] = arg
-			continue
-		}
-		// Only convert arguments that look like file paths
-		// (contain directory separators or file extensions)
-		convertedArgs[i] = arg
-		if shouldConvertPath(arg) {
-			convertedArgs[i] = c.convertPath(arg)
-		}
+		convertedArgs[i] = c.convertArgForDocker(arg)
 	}
 
 	// Build docker run command
@@ -91,16 +81,23 @@ func (c *Client) Run(ctx context.Context, name string, args ...string) (stdout s
 	stdout = stdoutBuf.String()
 	stderr = stderrBuf.String()
 
-	if err != nil {
-		cmdStr := formatCommand(name, args)
-		detail := strings.TrimSpace(stderr)
-		if detail != "" {
-			return stdout, stderr, fmt.Errorf("command %s failed: %s", cmdStr, detail)
-		}
-		return stdout, stderr, fmt.Errorf("command %s failed: %w", cmdStr, err)
+	if err == nil {
+		return stdout, stderr, nil
 	}
 
-	return stdout, stderr, nil
+	cmdStr := formatCommand(name, args)
+	return stdout, stderr, formatDockerCommandError(cmdStr, err, stderr)
+}
+
+func (c *Client) convertArgForDocker(arg string) string {
+	if strings.HasPrefix(arg, "-") {
+		return arg
+	}
+	if !shouldConvertPath(arg) {
+		return arg
+	}
+
+	return c.convertPath(arg)
 }
 
 // convertPath converts absolute file paths to container paths.
@@ -136,15 +133,30 @@ func (c *Client) ensureImage(ctx context.Context) error {
 	var stderrBuf bytes.Buffer
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Run(); err != nil {
-		stderr := strings.TrimSpace(stderrBuf.String())
-		if stderr != "" {
-			return fmt.Errorf("pull image: %s", stderr)
-		}
-		return fmt.Errorf("pull image: %w", err)
+	err := cmd.Run()
+	if err == nil {
+		return nil
 	}
 
-	return nil
+	return formatDockerPullError(err, stderrBuf.String())
+}
+
+func formatDockerCommandError(command string, commandErr error, stderr string) error {
+	detail := strings.TrimSpace(stderr)
+	if detail == "" {
+		return fmt.Errorf("command %s failed: %w", command, commandErr)
+	}
+
+	return fmt.Errorf("command %s failed: %s", command, detail)
+}
+
+func formatDockerPullError(commandErr error, stderr string) error {
+	detail := strings.TrimSpace(stderr)
+	if detail == "" {
+		return fmt.Errorf("pull image: %w", commandErr)
+	}
+
+	return fmt.Errorf("pull image: %s", detail)
 }
 
 func formatCommand(name string, args []string) string {

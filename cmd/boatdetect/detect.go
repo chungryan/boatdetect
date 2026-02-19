@@ -102,31 +102,50 @@ func processCandidates(ctx context.Context, inputFiles []string, preprocessDir s
 	sceneOrder := make([]string, 0)
 
 	for _, inputPath := range inputFiles {
-		byteTif, err := gdal.Preprocess(ctx, inputPath, preprocessDir, bbox)
+		sceneID, candidates, err := detectCandidatesForInput(ctx, inputPath, preprocessDir, bbox)
 		if err != nil {
-			return nil, nil, fmt.Errorf("preprocess %s: %w", inputPath, err)
+			return nil, nil, err
 		}
 
-		candidates, err := detect.DetectCandidates(ctx, byteTif, defaultK, defaultPercentile, defaultInvert, defaultMinAreaPx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("detect %s: %w", inputPath, err)
-		}
-
-		sceneID := sceneIDFromPath(inputPath)
-		if _, ok := seenScenes[sceneID]; !ok {
-			seenScenes[sceneID] = struct{}{}
-			sceneOrder = append(sceneOrder, sceneID)
-		}
-
-		for _, candidate := range candidates {
-			records = append(records, candidateRecord{
-				sceneID:   sceneID,
-				candidate: candidate,
-			})
-		}
+		sceneOrder = appendSceneIfMissing(sceneOrder, seenScenes, sceneID)
+		records = appendCandidateRecords(records, sceneID, candidates)
 	}
 
 	return records, sceneOrder, nil
+}
+
+func detectCandidatesForInput(ctx context.Context, inputPath string, preprocessDir string, bbox [4]float64) (string, []detect.Candidate, error) {
+	byteTif, err := gdal.Preprocess(ctx, inputPath, preprocessDir, bbox)
+	if err != nil {
+		return "", nil, fmt.Errorf("preprocess %s: %w", inputPath, err)
+	}
+
+	candidates, err := detect.DetectCandidates(ctx, byteTif, defaultK, defaultPercentile, defaultInvert, defaultMinAreaPx)
+	if err != nil {
+		return "", nil, fmt.Errorf("detect %s: %w", inputPath, err)
+	}
+
+	return sceneIDFromPath(inputPath), candidates, nil
+}
+
+func appendSceneIfMissing(sceneOrder []string, seenScenes map[string]struct{}, sceneID string) []string {
+	if _, ok := seenScenes[sceneID]; ok {
+		return sceneOrder
+	}
+
+	seenScenes[sceneID] = struct{}{}
+	return append(sceneOrder, sceneID)
+}
+
+func appendCandidateRecords(records []candidateRecord, sceneID string, candidates []detect.Candidate) []candidateRecord {
+	for _, candidate := range candidates {
+		records = append(records, candidateRecord{
+			sceneID:   sceneID,
+			candidate: candidate,
+		})
+	}
+
+	return records
 }
 
 func writeGeojson(outPath string, sceneOrder []string, byScene map[string][]detect.Candidate) error {
@@ -318,14 +337,9 @@ func bboxFromFiles(ctx context.Context, inputFiles []string) (minLon, minLat, ma
 			return 0, 0, 0, 0, fmt.Errorf("get raster info: %w", err)
 		}
 
-		var bbox [4]float64
-		if info.WGS84BBox != nil {
-			bbox = *info.WGS84BBox
-		} else {
-			bbox, err = calculateBboxFromCorners(info)
-			if err != nil {
-				return 0, 0, 0, 0, err
-			}
+		bbox, err := rasterBBox(info)
+		if err != nil {
+			return 0, 0, 0, 0, err
 		}
 
 		minLon = math.Min(minLon, bbox[0])
@@ -339,6 +353,14 @@ func bboxFromFiles(ctx context.Context, inputFiles []string) (minLon, minLat, ma
 	}
 
 	return minLon, minLat, maxLon, maxLat, nil
+}
+
+func rasterBBox(info gdal.RasterInfo) ([4]float64, error) {
+	if info.WGS84BBox != nil {
+		return *info.WGS84BBox, nil
+	}
+
+	return calculateBboxFromCorners(info)
 }
 
 func calculateBboxFromCorners(info gdal.RasterInfo) ([4]float64, error) {

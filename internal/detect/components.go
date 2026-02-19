@@ -52,34 +52,8 @@ func Components(grid gdal.Grid, threshold float64, invert bool, minAreaPx int) [
 			continue
 		}
 
-		area := 0
-		sum := 0.0
-		sumX := 0.0
-		sumY := 0.0
-
-		stack := []int{idx}
-		visited[idx] = true
-
-		for len(stack) > 0 {
-			n := len(stack) - 1
-			cur := stack[n]
-			stack = stack[:n]
-
-			cv := grid.Data[cur]
-			if !qualifies(cv) {
-				continue
-			}
-
-			x := cur % grid.Width
-			y := cur / grid.Width
-
-			area++
-			sum += cv
-			sumX += float64(x)
-			sumY += float64(y)
-
-			stack = addNeighbors(cur, x, y, grid.Width, grid.Height, visited, stack)
-		}
+		component := floodFillComponent(grid, idx, visited, qualifies)
+		area := component.Area
 
 		if area == 0 || area < minAreaPx {
 			continue
@@ -87,13 +61,55 @@ func Components(grid gdal.Grid, threshold float64, invert bool, minAreaPx int) [
 
 		components = append(components, Component{
 			Area: area,
-			Sum:  sum,
-			Cx:   sumX / float64(area),
-			Cy:   sumY / float64(area),
+			Sum:  component.Sum,
+			Cx:   component.Cx,
+			Cy:   component.Cy,
 		})
 	}
 
 	return components
+}
+
+func floodFillComponent(grid gdal.Grid, startIdx int, visited []bool, qualifies func(float64) bool) Component {
+	area := 0
+	sum := 0.0
+	sumX := 0.0
+	sumY := 0.0
+
+	stack := []int{startIdx}
+	visited[startIdx] = true
+
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		cur := stack[n]
+		stack = stack[:n]
+
+		cv := grid.Data[cur]
+		if !qualifies(cv) {
+			continue
+		}
+
+		x := cur % grid.Width
+		y := cur / grid.Width
+
+		area++
+		sum += cv
+		sumX += float64(x)
+		sumY += float64(y)
+
+		stack = addNeighbors(cur, x, y, grid.Width, grid.Height, visited, stack)
+	}
+
+	if area == 0 {
+		return Component{}
+	}
+
+	return Component{
+		Area: area,
+		Sum:  sum,
+		Cx:   sumX / float64(area),
+		Cy:   sumY / float64(area),
+	}
 }
 
 func addNeighbors(cur, x, y, width, height int, visited []bool, stack []int) []int {

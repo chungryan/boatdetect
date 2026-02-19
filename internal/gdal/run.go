@@ -20,14 +20,15 @@ func Run(ctx context.Context, name string, args ...string) (stdout string, stder
 	}
 
 	client := GetClient()
-	if client == nil {
-		if mode == "docker" {
-			return "", "", fmt.Errorf("docker client not initialized - call Initialize() first")
-		}
-		return runLocal(ctx, name, args...)
+	if client != nil {
+		return client.RunDocker(ctx, name, args...)
 	}
 
-	return client.RunDocker(ctx, name, args...)
+	if mode == "docker" {
+		return "", "", fmt.Errorf("docker client not initialized - call Initialize() first")
+	}
+
+	return runLocal(ctx, name, args...)
 }
 
 func runLocal(ctx context.Context, name string, args ...string) (stdout string, stderr string, err error) {
@@ -41,14 +42,19 @@ func runLocal(ctx context.Context, name string, args ...string) (stdout string, 
 	err = cmd.Run()
 	stdout = stdoutBuf.String()
 	stderr = stderrBuf.String()
-	if err != nil {
-		cmdStr := formatCommand(name, args)
-		detail := strings.TrimSpace(stderr)
-		if detail != "" {
-			return stdout, stderr, fmt.Errorf("command %s failed: %w: %s", cmdStr, err, detail)
-		}
-		return stdout, stderr, fmt.Errorf("command %s failed: %w", cmdStr, err)
+	if err == nil {
+		return stdout, stderr, nil
 	}
 
-	return stdout, stderr, nil
+	cmdStr := formatCommand(name, args)
+	return stdout, stderr, formatLocalCommandError(cmdStr, err, stderr)
+}
+
+func formatLocalCommandError(command string, commandErr error, stderr string) error {
+	detail := strings.TrimSpace(stderr)
+	if detail == "" {
+		return fmt.Errorf("command %s failed: %w", command, commandErr)
+	}
+
+	return fmt.Errorf("command %s failed: %w: %s", command, commandErr, detail)
 }

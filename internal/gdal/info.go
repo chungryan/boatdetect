@@ -68,16 +68,23 @@ func wgs84BBoxFromExtent(coords [][][]float64) *[4]float64 {
 	minLat, maxLat := coords[0][0][1], coords[0][0][1]
 
 	for _, ring := range coords {
-		for _, pt := range ring {
-			if len(pt) < 2 {
-				continue
-			}
-			minLon = math.Min(minLon, pt[0])
-			maxLon = math.Max(maxLon, pt[0])
-			minLat = math.Min(minLat, pt[1])
-			maxLat = math.Max(maxLat, pt[1])
-		}
+		minLon, minLat, maxLon, maxLat = updateBBoxFromRing(ring, minLon, minLat, maxLon, maxLat)
 	}
 
 	return &[4]float64{minLon, minLat, maxLon, maxLat}
+}
+
+func updateBBoxFromRing(ring [][]float64, minLon, minLat, maxLon, maxLat float64) (float64, float64, float64, float64) {
+	for _, pt := range ring {
+		if len(pt) < 2 {
+			continue
+		}
+
+		minLon = math.Min(minLon, pt[0])
+		maxLon = math.Max(maxLon, pt[0])
+		minLat = math.Min(minLat, pt[1])
+		maxLat = math.Max(maxLat, pt[1])
+	}
+
+	return minLon, minLat, maxLon, maxLat
 }
